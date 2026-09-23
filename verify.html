@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validação de Foto</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0a1628;
+    color: #eef2f6;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+  }
+  main {
+    width: 100%;
+    max-width: 560px;
+    padding: 20px 16px 40px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #7f93ad; margin-bottom: 18px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .badge.ok { background: rgba(69,212,146,0.15); color: #45d492; }
+  img.foto {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #1b2e4a;
+    margin-bottom: 16px;
+    display: block;
+  }
+  .card {
+    background: #101f38;
+    border: 1px solid #1b2e4a;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 0;
+    font-size: 13.5px;
+  }
+  .row .k { color: #9db3cc; }
+  .row .v { color: #eef2f6; text-align: right; font-weight: 500; }
+  .hidden { display: none !important; }
+  .btn-download {
+    display: block;
+    width: 100%;
+    padding: 13px 10px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    border: 1px solid #45d492;
+    background: rgba(69,212,146,0.12);
+    color: #45d492;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-download:active { opacity: 0.75; }
+
+  /* ---------- Tela de acesso (só o campo + botão) ---------- */
+  .gate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+    gap: 6px;
+  }
+  .gate input {
+    width: 100%;
+    max-width: 280px;
+    text-align: center;
+    letter-spacing: 2px;
+    font-size: 20px;
+    font-weight: 600;
+    background: #101f38;
+    border: 1px solid #263c60;
+    color: #eef2f6;
+    border-radius: 10px;
+    padding: 14px 12px;
+    outline: none;
+    margin-bottom: 14px;
+  }
+  .gate input:focus { border-color: #45d492; }
+  .gate button {
+    width: 100%;
+    max-width: 280px;
+    padding: 13px 10px;
+    border-radius: 10px;
+    border: none;
+    background: #45d492;
+    color: #0a1628;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .gate button:disabled { opacity: 0.5; }
+  .gate button:active:not(:disabled) { opacity: 0.75; }
+  .gate .error-msg { color: #ff7a7a; font-size: 13px; margin-top: 12px; min-height: 18px; text-align: center; }
+
+  @media print {
+    @page { margin: 8mm; }
+    body { background: #ffffff; color: #111827; }
+    .btn-download { display: none !important; }
+    .sub { display: none !important; }
+    .card { display: none !important; }
+    img.foto { border-color: #d1d9e6; max-height: 90vh; }
+    h1 { margin-bottom: 10px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ---------- TELA 1: pedir o CPF ---------- -->
+  <div id="gateScreen" class="gate">
+    <input id="codigoInput" type="text" inputmode="numeric" maxlength="11" autocomplete="off">
+    <button id="btnValidar">Validar</button>
+    <div id="gateError" class="error-msg"></div>
+  </div>
+
+  <!-- ---------- TELA 2: resultado (só aparece após o CPF certo) ---------- -->
+  <div id="contentScreen" class="hidden">
+    <h1>Validação de Foto</h1>
+    <p class="sub">Registro oficial consultado direto do banco de dados</p>
+
+    <div id="result" class="hidden">
+      <div class="badge ok">✔ Registro autêntico</div>
+
+      <img id="foto" class="foto" alt="Foto registrada">
+
+      <div class="card">
+        <div class="row"><span class="k">Loja</span><span class="v" id="vLoja">—</span></div>
+      </div>
+
+      <button id="btnPrint" class="btn-download">🖨️ Imprimir / Salvar como PDF</button>
+    </div>
+  </div>
+</main>
+
+<script src="worker-config.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const id = params.get('id');
+
+const gateScreen = document.getElementById('gateScreen');
+const contentScreen = document.getElementById('contentScreen');
+const codigoInput = document.getElementById('codigoInput');
+const btnValidar = document.getElementById('btnValidar');
+const gateError = document.getElementById('gateError');
+
+// ---------- Lembrar o CPF já digitado neste aparelho ----------
+const CODIGO_STORAGE_KEY = 'geocam-cpf-validacao';
+try {
+  const salvo = localStorage.getItem(CODIGO_STORAGE_KEY);
+  if (salvo) codigoInput.value = salvo;
+} catch (e) { /* ignora */ }
+
+// ---------- Só números, sem ponto/traço, máximo 11 dígitos ----------
+codigoInput.addEventListener('input', () => {
+  codigoInput.value = codigoInput.value.replace(/\D/g, '').slice(0, 11);
+  try { localStorage.setItem(CODIGO_STORAGE_KEY, codigoInput.value); } catch (e) { /* ignora */ }
+});
+
+async function validarCodigo() {
+  const codigo = codigoInput.value.trim();
+  if (!codigo) {
+    gateError.textContent = 'Digite seu CPF.';
+    return;
+  }
+  if (!id) {
+    gateError.textContent = 'Link inválido — falta o ID do registro.';
+    return;
+  }
+
+  btnValidar.disabled = true;
+  btnValidar.textContent = 'Validando…';
+  gateError.textContent = '';
+
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, codigo })
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      gateError.textContent = data.error || 'CPF inválido.';
+      btnValidar.disabled = false;
+      btnValidar.textContent = 'Validar';
+      return;
+    }
+
+    gateScreen.classList.add('hidden');
+    contentScreen.classList.remove('hidden');
+    renderFoto(data.foto);
+  } catch (err) {
+    gateError.textContent = 'Erro de conexão. Tente novamente.';
+    btnValidar.disabled = false;
+    btnValidar.textContent = 'Validar';
+  }
+}
+
+btnValidar.addEventListener('click', validarCodigo);
+codigoInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') validarCodigo();
+});
+
+function slugify(texto) {
+  return String(texto || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function formatarDataArquivo(dataISO) {
+  const d = dataISO ? new Date(dataISO) : new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}${mm}${yy}`;
+}
+
+function renderFoto(foto) {
+  document.getElementById('foto').src = foto.foto
+    ? `data:${foto.mimeType || 'image/jpeg'};base64,${foto.foto}`
+    : '';
+  document.getElementById('vLoja').textContent = foto.loja || '—';
+  document.getElementById('result').classList.remove('hidden');
+
+  document.getElementById('btnPrint').addEventListener('click', () => {
+    const tituloOriginal = document.title;
+    const lojaSlug = slugify(foto.loja) || 'loja';
+    const dataSlug = formatarDataArquivo(foto.createdAt);
+    document.title = `validacao_foto_${lojaSlug}_${dataSlug}`;
+
+    window.print();
+
+    // Restaura o título normal da página depois de imprimir/cancelar
+    setTimeout(() => { document.title = tituloOriginal; }, 500);
+  });
+}
+</script>
+</body>
+</html>
